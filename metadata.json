@@ -1,0 +1,5 @@
+{
+  "name": "JFB Main",
+  "description": "A high-fidelity financial dashboard featuring transaction calendars, portfolio tracking, and budget categorization with a dark glassmorphism UI.",
+  "requestFramePermissions": []
+}
