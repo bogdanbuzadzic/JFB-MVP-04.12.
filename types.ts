@@ -92,6 +92,7 @@ export interface TetrisBlock {
   percent?: number;
   color?: string;
   isAsset?: boolean; // True for Cash/Portfolio balances, False for Monthly Flows
+  specificMonth?: string; // Format: "YYYY-MM", if undefined/null it is recurring
 }
 
 export interface TetrisGoal {

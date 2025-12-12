@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HelpCircle, X, ChevronsUp, ChevronsDown, Briefcase, ExternalLink, Home } from 'lucide-react';
+import { HelpCircle, X, ChevronsUp, ChevronsDown, Briefcase, ExternalLink, Home, Calendar, Repeat } from 'lucide-react';
 import { ClaritySurveyData, TetrisBlock, TetrisGoal } from '../../types';
 import CategoryModal from './CategoryModal';
 import GoalModal from './GoalModal';
@@ -19,6 +19,12 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
   const [inputAmount, setInputAmount] = useState('');
   const [timeframe, setTimeframe] = useState('monthly');
   
+  // Monthly Navigation State
+  const [viewDate, setViewDate] = useState(new Date());
+  
+  // Block Entry State
+  const [isRecurring, setIsRecurring] = useState(true);
+
   // Simulation State
   const [startingPrincipal, setStartingPrincipal] = useState(0);
   const [initialSavings, setInitialSavings] = useState(0);
@@ -145,6 +151,30 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
      if (rate > 0) setSimulationRate(rate);
   }, [blocks, clarityData]);
 
+  // --- HELPERS ---
+
+  const toMonthKey = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  };
+
+  const getMonthOptions = () => {
+    const opts = [];
+    const now = new Date();
+    // Start 1 month back, show 5 months total
+    for (let i = -1; i <= 3; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        opts.push(d);
+    }
+    return opts;
+  };
+
+  const isCurrentMonth = (d: Date) => {
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  };
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
@@ -167,17 +197,25 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
 
   const handleCategorySelect = (category: string) => {
     if (selectedBlockType) {
-        setBlocks(prev => [...prev, {
+        // Prepare new block
+        const newBlock: TetrisBlock = {
             id: Math.random().toString(),
             type: selectedBlockType,
             category,
             amount: Number(inputAmount),
             percent: 0,
             isAsset: selectedBlockType === 'savings'
-        }]);
+        };
+
+        // Handle specific month vs recurring
+        if (timeframe === 'monthly' && !isRecurring) {
+            newBlock.specificMonth = toMonthKey(viewDate);
+        }
+
+        setBlocks(prev => [...prev, newBlock]);
         setShowCategoryModal(false);
         setInputAmount('');
-        showToast(`Added ${category} block`);
+        showToast(`Added ${category} block${newBlock.specificMonth ? ' for ' + new Date(viewDate).toLocaleString('default', {month:'short'}) : ''}`);
     }
   };
 
@@ -218,11 +256,25 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
   };
   const m = getMultiplier();
 
-  // Filtered & Scaled Data
-  const incomeBlocks = blocks.filter(b => b.type === 'income');
-  const expenseBlocks = blocks.filter(b => b.type === 'expense');
-  const savingsBlocks = blocks.filter(b => b.type === 'savings');
-  const investmentBlocks = blocks.filter(b => b.type === 'investment');
+  // Determine Active Blocks for Display
+  const currentMonthKey = toMonthKey(viewDate);
+  const activeBlocks = blocks.filter(b => {
+      if (timeframe === 'monthly') {
+          // Show Recurring OR Specific to this month
+          if (!b.specificMonth) return true;
+          return b.specificMonth === currentMonthKey;
+      } else {
+          // For other views, ideally only show Recurring to avoid skewing averages
+          // OR we could sum up everything in range, but for simplicity, we show recurring.
+          return !b.specificMonth;
+      }
+  });
+
+  // Filtered & Scaled Data from Active Blocks
+  const incomeBlocks = activeBlocks.filter(b => b.type === 'income');
+  const expenseBlocks = activeBlocks.filter(b => b.type === 'expense');
+  const savingsBlocks = activeBlocks.filter(b => b.type === 'savings');
+  const investmentBlocks = activeBlocks.filter(b => b.type === 'investment');
 
   const totalIncome = incomeBlocks.reduce((s, b) => s + b.amount, 0) * m;
   const totalExpenses = expenseBlocks.reduce((s, b) => s + b.amount, 0) * m;
@@ -243,7 +295,10 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
               <div className="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
                   {expenseBlocks.map(b => (
                       <div key={b.id} className="flex justify-between items-center bg-white/5 p-3 rounded-xl">
-                          <span className="font-bold text-slate-300">{b.category}</span>
+                          <div className="flex items-center gap-2">
+                             <span className="font-bold text-slate-300">{b.category}</span>
+                             {b.specificMonth && <span className="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded">One-time</span>}
+                          </div>
                           <span className="font-mono text-pink-400">€{(b.amount * m).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                       </div>
                   ))}
@@ -268,12 +323,13 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
             SIMULATION MODE
         </button>
         <div className="flex gap-3">
-            <button className="bg-[#1E293B]/80 border border-white/10 rounded-full px-6 py-2 font-bold hover:bg-white/10 transition-all text-sm">SAVE</button>
+            <button className="bg-[#1E293B]/80 border-white/10 rounded-full px-6 py-2 font-bold hover:bg-white/10 transition-all text-sm border">SAVE</button>
         </div>
       </div>
 
-      {/* Timeframe */}
-      <div className="flex justify-center mb-6">
+      {/* Timeframe & Month Navigation */}
+      <div className="flex flex-col items-center mb-6 gap-3">
+         {/* Main Timeframe Selector */}
          <div className="bg-[#1E293B] p-1.5 rounded-xl border border-white/10 flex shadow-xl">
              {['DAILY', 'MONTHLY', 'YEARLY', '5Y', '10Y'].map((tf) => (
                  <button 
@@ -285,16 +341,47 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
                  </button>
              ))}
          </div>
+
+         {/* Sub-toolbar: Month Selector (Visible only in MONTHLY mode) */}
+         {timeframe === 'monthly' && (
+             <div className="flex items-center gap-2 bg-[#1E293B]/60 p-1.5 rounded-xl border border-white/5 backdrop-blur-md animate-in slide-in-from-top-2">
+                 {getMonthOptions().map((date, i) => {
+                     const isSelected = toMonthKey(date) === toMonthKey(viewDate);
+                     const isCurrent = isCurrentMonth(date);
+                     return (
+                        <button
+                            key={i}
+                            onClick={() => setViewDate(date)}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex flex-col items-center min-w-[60px] ${
+                                isSelected 
+                                ? 'bg-white/10 text-white shadow-inner border border-white/10' 
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                            }`}
+                        >
+                            <span className="font-bold">{date.toLocaleString('default', { month: 'short' })}</span>
+                            <span className="text-[9px] opacity-70">{isCurrent ? 'Current' : date.getFullYear().toString().slice(2)}</span>
+                        </button>
+                     );
+                 })}
+             </div>
+         )}
       </div>
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 max-w-7xl mx-auto h-[550px]">
-        {/* PRESENT */}
+        {/* PRESENT / PLANNING View */}
         <div className="bg-[#1E293B]/40 border border-white/10 rounded-3xl p-6 flex flex-col h-full relative backdrop-blur-md shadow-2xl">
-            <h2 className="text-xl font-bold text-center mb-6 tracking-[0.3em] text-white/90 uppercase">Present</h2>
+            <h2 className="text-xl font-bold text-center mb-2 tracking-[0.3em] text-white/90 uppercase">
+                {timeframe === 'monthly' ? `Plan: ${viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })}` : 'Present'}
+            </h2>
+            <div className="text-center text-xs text-slate-400 mb-4 font-mono">
+                {timeframe === 'monthly' ? (
+                    isCurrentMonth(viewDate) ? '(Current Period)' : '(Projected)'
+                ) : ''}
+            </div>
             
             {/* Dashed Border Container */}
-            <div className="absolute inset-4 top-16 border-2 border-dashed border-white/10 rounded-2xl pointer-events-none"></div>
+            <div className="absolute inset-4 top-20 border-2 border-dashed border-white/10 rounded-2xl pointer-events-none"></div>
 
             {/* Stacking Context */}
             <div className="flex-1 rounded-2xl p-4 flex flex-col gap-3 overflow-y-auto custom-scrollbar relative z-10">
@@ -393,10 +480,10 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
                     </>
                 )}
                 
-                {blocks.length === 0 && (
+                {activeBlocks.length === 0 && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center opacity-40">
                         <div className="w-16 h-16 mb-4 text-4xl">🗄️</div>
-                        <p className="text-sm font-bold text-slate-300">Add blocks below to start visualizing your finances.</p>
+                        <p className="text-sm font-bold text-slate-300">Add blocks below to start planning.</p>
                     </div>
                 )}
 
@@ -459,7 +546,23 @@ const FinancialTetris: React.FC<Props> = ({ clarityData, onExit }) => {
 
       {/* Block Adder */}
       <div className="max-w-4xl mx-auto bg-[#1E293B] rounded-3xl p-6 border border-white/10 shadow-2xl relative z-20">
-        <div className="mb-2 text-[10px] font-bold text-slate-500 tracking-[0.2em] uppercase ml-2">Amount Entry</div>
+        <div className="flex justify-between items-center mb-2 ml-2">
+            <div className="text-[10px] font-bold text-slate-500 tracking-[0.2em] uppercase">Amount Entry</div>
+            
+            {/* Recurring Toggle (Only in Monthly Mode) */}
+            {timeframe === 'monthly' && (
+                <button 
+                    onClick={() => setIsRecurring(!isRecurring)}
+                    className="flex items-center gap-2 text-xs font-bold transition-colors text-slate-400 hover:text-white"
+                >
+                    <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${isRecurring ? 'bg-blue-500' : 'bg-slate-700'}`}>
+                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${isRecurring ? 'left-4.5' : 'left-0.5'}`} style={{ left: isRecurring ? '18px' : '2px' }}></div>
+                    </div>
+                    {isRecurring ? 'Recurring' : `Only for ${viewDate.toLocaleString('default', {month:'short'})}`}
+                </button>
+            )}
+        </div>
+
         <div className="relative mb-6">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-mono text-slate-600">€</span>
             <input 
